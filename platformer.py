@@ -1,4 +1,6 @@
 import pygame
+import pickle
+from os import path
 
 pygame.init()
 
@@ -14,16 +16,37 @@ pygame.display.set_caption('Platformer')
 #define game variables
 tile_size=50
 game_over=0
+main_menu = True
+level = 1
+max_levels = 3
 
 #load images
 sun_img = pygame.image.load('./img/sun.png')
 bg_img = pygame.image.load('./img/sky.png')
 restart_img = pygame.image.load('./img/restart_btn.png')
+start_img = pygame.image.load('./img/start_btn.png')
+exit_img = pygame.image.load('./img/exit_btn.png')
 
 def draw_grid():
     for line in range(0, 20):
         pygame.draw.line(screen, (255, 255, 255), (0, line * tile_size), (screen_width, line * tile_size))
         pygame.draw.line(screen, (255, 255, 255), (line * tile_size, 0), (line * tile_size, screen_height))
+
+#function to reset level
+def reset_level(level):
+    player.reset(100,screen_height - 130)#reset player position
+    blob_group.empty()#empty all the sprtie and enemy groups to prepare for new level
+    lava_group.empty()
+    exit_group.empty()
+
+    #load in level data from files and create world
+    if path.exists(f'level{level}_data'): #check if the level file exists in directory
+        pickle_in = open(f'level{level}_data','rb')#rb stand for read binary, aka the data type of the level_data's
+        world_data = pickle.load(pickle_in)
+    world = World(world_data)
+
+    return world
+
 
 class Button():
     def __init__ (self, x,y,image):
@@ -128,6 +151,8 @@ class Player():
                 game_over = -1
             if pygame.sprite.spritecollide(self, lava_group, False):#keep False, or else deletes those enemies/things
                 game_over = -1
+            if pygame.sprite.spritecollide(self, exit_group, False):#keep False, or else deletes those enemies/things
+                game_over = 1
 
             #update player coordinates
             self.rect.x += dx
@@ -205,6 +230,9 @@ class World():
                 if tile == 6:
                     lava = Lava(col_count * tile_size, row_count * tile_size+(tile_size // 2))#its // so we get an int, float would give us error
                     lava_group.add(lava)
+                if tile == 8:
+                    exit = Exit(col_count * tile_size, row_count * tile_size - (tile_size //2))
+                    exit_group.add(exit)
                 col_count += 1
             row_count += 1
 
@@ -241,6 +269,15 @@ class Lava(pygame.sprite.Sprite):
         self.rect.x = x
         self.rect.y = y
 
+class Exit(pygame.sprite.Sprite):
+    def __init__(self,x,y):
+        pygame.sprite.Sprite.__init__(self)
+        img = pygame.image.load('./img/exit.png')
+        self.image = pygame.transform.scale(img, (tile_size, int(tile_size * 1.5)))
+        self.rect = self.image.get_rect()
+        self.rect.x = x
+        self.rect.y = y
+"""""
 world_data = [
 [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], 
 [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], 
@@ -263,17 +300,25 @@ world_data = [
 [1, 0, 0, 0, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], 
 [1, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
 ]
+"""""
 
 player = Player(100,screen_height - 130)
 
 #pygame.sprite.Sprite acts like a list, so we initialize an empty sprite list that we can fill in
 blob_group = pygame.sprite.Group()
 lava_group = pygame.sprite.Group()
+exit_group = pygame.sprite.Group()
 
+#load in level data from files and create world
+if path.exists(f'level{level}_data'): #check if the level file exists in directory
+    pickle_in = open(f'level{level}_data','rb')#rb stand for read binary, aka the data type of the level_data's
+    world_data = pickle.load(pickle_in)
 world = World(world_data)
 
-#rcreate buttons
+#create buttons
 restart_button = Button(screen_width //2 -50, screen_height//2 + 100, restart_img)
+start_button = Button(screen_width // 2 -350, screen_height // 2, start_img)
+exit_button = Button(screen_width // 2 + 150, screen_height // 2, exit_img)
 
 run = True
 #to keep code/game always running (and window doesn't close immediatley), 
@@ -284,22 +329,50 @@ while run:
     screen.blit(bg_img, (0,0))
     screen.blit(sun_img, (100,100))
 
-    world.draw()
+    #if in main menu
+    if main_menu:
+        if exit_button.draw():#returns false or true if button is pressed
+            run = False
+        if start_button.draw():
+            main_menu=False
+        
+    #if not in main menu, generate world and play game
+    else:
+        world.draw()
 
-    #stops animation/updating for blob group when gameover
-    if game_over == 0:
-        blob_group.update()
+        #stops animation/updating for blob group when gameover
+        if game_over == 0:
+            blob_group.update()
 
-    blob_group.draw(screen)
-    lava_group.draw(screen)
-    game_over = player.update(game_over)
-    draw_grid();
+        blob_group.draw(screen)
+        lava_group.draw(screen)
+        exit_group.draw(screen)
+        game_over = player.update(game_over)
+        draw_grid();
 
-    #if player had died
-    if game_over == -1:
-        if restart_button.draw(): #checks if variable "action" returned is true or false; if true that means button was clicked
-            player = Player(100,screen_height - 130)
-            game_over = 0
+        #if player had died
+        if game_over == -1:
+            if restart_button.draw(): #checks if variable "action" returned is true or false; if true that means button was clicked
+                world_data = [] #empties the world_data from current level
+                world = reset_level(level) #save the world reset and generated from reset_level
+                game_over = 0
+
+        #if player completed level
+        if game_over == 1:
+            #reset and go to next level
+            level += 1
+            if level <= max_levels:
+                #reset level
+                world_data = [] #empties the world_data from current level
+                world = reset_level(level) #save the world reset and generated from reset_level
+                game_over = 0
+            else:
+                #restart game
+                if restart_button.draw():
+                    level = 1
+                    world_data = [] #empties the world_data from current level
+                    world = reset_level(level) #save the world reset and generated from reset_level
+                    game_over = 0
 
     #event is any input
     for event in pygame.event.get():
